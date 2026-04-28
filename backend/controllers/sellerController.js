@@ -47,3 +47,14 @@ exports.getSellerDashboard = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+exports.getSellerProducts = async (req, res) => {
+  try {
+    const seller = await Seller.findOne({ user: req.user._id });
+    if (!seller) return res.status(404).json({ success: false, message: 'Seller profile not found' });
+    
+    const products = await Product.find({ seller: seller._id }).sort('-createdAt');
+    res.json({ success: true, products });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

@@ -26,8 +26,7 @@ const login = async (req, res) => {
     return res.status(401).json({ success: false, message: 'Invalid email or password' });
   }
   if (!user.isActive) return res.status(403).json({ success: false, message: 'Account suspended' });
-  user.lastLogin = new Date();
-  await user.save();
+  await User.findByIdAndUpdate(user._id, { lastLogin: new Date() });
   const token = generateToken(user._id);
   res.cookie('nexaToken', token, { httpOnly: true, maxAge: 30 * 24 * 60 * 60 * 1000, sameSite: 'lax' });
   res.json({

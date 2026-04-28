@@ -58,8 +58,14 @@ const getProductBySlug = async (req, res) => {
   res.json({ success: true, product });
 };
 
-// POST /api/products (admin)
+// POST /api/products (admin/seller)
 const createProduct = async (req, res) => {
+  if (req.user.role === 'seller') {
+    const Seller = require('../models/Seller');
+    const sellerProfile = await Seller.findOne({ user: req.user._id });
+    if (!sellerProfile) return res.status(403).json({ success: false, message: 'Seller profile required' });
+    req.body.seller = sellerProfile._id;
+  }
   const product = await Product.create(req.body);
   res.status(201).json({ success: true, product });
 };

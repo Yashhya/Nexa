@@ -1,18 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShoppingBag, Plus, Search, Edit2, Trash2, Eye, CheckCircle, XCircle, Clock, X, AlertCircle, Box } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { CATEGORIES } from '../../utils/helpers';
 import toast from 'react-hot-toast';
-
-const MOCK_PRODUCTS = [
-  { id: 'p1', name: 'Sony WH-1000XM5 Headphones', sku: 'EL-SONY-001', category: 'Electronics', price: 24990, stock: 80, status: 'approved', sales: 48, model3d: 'https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/headphones/model.gltf', img: 'https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?w=60&q=80' },
-  { id: 'p2', name: 'Premium Biker Leather Jacket', sku: 'FA-LBJ-001', category: 'Fashion', price: 9999, stock: 40, status: 'approved', sales: 23, model3d: '', img: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=60&q=80' },
-  { id: 'p3', name: 'Nike Air Max 270 React', sku: 'SH-NIKE-001', category: 'Shoes', price: 12995, stock: 100, status: 'pending', sales: 0, model3d: 'https://vazxmixjsiawhamofees.supabase.co/storage/v1/object/public/models/shoe-draco/model.gltf', img: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=60&q=80' },
-  { id: 'p4', name: 'Ray-Ban Aviator Classic', sku: 'AC-RB-001', category: 'Accessories', price: 9500, stock: 120, status: 'approved', sales: 67, model3d: '', img: 'https://images.unsplash.com/photo-1572635196237-14b3f281503f?w=60&q=80' },
-  { id: 'p5', name: 'Rolex Submariner Homage', sku: 'WA-SUB-001', category: 'Watches', price: 15999, stock: 30, status: 'rejected', sales: 0, model3d: '', img: 'https://images.unsplash.com/photo-1523170335258-f5ed11844a49?w=60&q=80' },
-];
+import api from '../../utils/api';
 
 const EMPTY_FORM = { name: '', category: '', brand: '', price: '', originalPrice: '', description: '', shortDescription: '', stock: '', thumbnail: '', model3d: '' };
 
@@ -43,7 +36,8 @@ const Field = ({ label, name, type = 'text', form, onChange, required, placehold
 };
 
 export default function SellerProducts() {
-  const [products, setProducts] = useState(MOCK_PRODUCTS);
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [filter, setFilter]     = useState('all');
   const [showModal, setShowModal] = useState(false);
@@ -51,8 +45,24 @@ export default function SellerProducts() {
   const [errors, setErrors]     = useState({});
   const { isDark } = useTheme();
 
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.get('/seller/products');
+      setProducts(data.products || []);
+    } catch (err) {
+      toast.error('Failed to load products');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filtered = products.filter(p => {
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || (p.sku && p.sku.toLowerCase().includes(search.toLowerCase()));
     const matchFilter = filter === 'all' || p.status === filter;
     return matchSearch && matchFilter;
   });
@@ -71,26 +81,34 @@ export default function SellerProducts() {
     return e;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); toast.error('Please fix the highlighted fields'); return; }
-    const newProduct = {
-      id: 'p' + Date.now(),
-      name: form.name, sku: 'SKU-' + Date.now(),
-      category: form.category, price: +form.price,
-      stock: +form.stock, status: 'pending', sales: 0,
-      model3d: form.model3d || '',
-      img: form.thumbnail,
-    };
-    setProducts(prev => [newProduct, ...prev]);
-    setShowModal(false);
-    setForm(EMPTY_FORM);
-    setErrors({});
-    toast.success('Product submitted for approval!');
+    
+    try {
+      const { data } = await api.post('/products', form);
+      setProducts(prev => [data.product, ...prev]);
+      setShowModal(false);
+      setForm(EMPTY_FORM);
+      setErrors({});
+      toast.success('Product submitted for approval!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to submit product');
+    }
   };
 
-  const deleteProduct = (id) => { if (window.confirm('Delete this product?')) setProducts(prev => prev.filter(p => p.id !== id)); };
+  const deleteProduct = async (id) => { 
+    if (window.confirm('Delete this product?')) {
+      try {
+        await api.delete(`/products/${id}`);
+        setProducts(prev => prev.filter(p => p._id !== id));
+        toast.success('Product deleted');
+      } catch (err) {
+        toast.error('Failed to delete product');
+      }
+    }
+  };
 
   const inputStyle = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-input)', border: '1px solid var(--border-color)', borderRadius: 12, padding: '0.6rem 1rem', flex: 1, minWidth: 250, maxWidth: 400 };
 
@@ -152,19 +170,19 @@ export default function SellerProducts() {
             </thead>
             <tbody>
               {filtered.map((product) => {
-                const { bg, text, icon: Icon } = statusConfig[product.status];
+                const { bg, text, icon: Icon } = statusConfig[product.status] || statusConfig.pending;
                 return (
-                  <motion.tr key={product.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  <motion.tr key={product._id} initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                     style={{ borderBottom: '1px solid var(--border-color)' }}
                     onMouseOver={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.01)'}
                     onMouseOut={e => e.currentTarget.style.background = 'transparent'}>
                     <td style={{ padding: '1rem 1.25rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <img src={product.img} alt={product.name} style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover' }} onError={e => { e.target.src = 'https://placehold.co/40x40/1e1b4b/a855f7?text=P'; }} />
+                        <img src={product.thumbnail} alt={product.name} style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover' }} onError={e => { e.target.src = 'https://placehold.co/40x40/1e1b4b/a855f7?text=P'; }} />
                         <span style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.85rem' }}>{product.name}</span>
                       </div>
                     </td>
-                    <td style={{ padding: '1rem 1.25rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>{product.sku}</td>
+                    <td style={{ padding: '1rem 1.25rem', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>{product.sku || 'N/A'}</td>
                     <td style={{ padding: '1rem 1.25rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{product.category}</td>
                     <td style={{ padding: '1rem 1.25rem', color: 'var(--text-primary)', fontWeight: 800 }}>₹{product.price.toLocaleString()}</td>
                     <td style={{ padding: '1rem 1.25rem', color: product.stock === 0 ? '#ef4444' : product.stock <= 5 ? '#f59e0b' : '#22c55e', fontWeight: 800 }}>{product.stock}</td>
@@ -178,12 +196,12 @@ export default function SellerProducts() {
                         <Icon size={12} />{product.status}
                       </span>
                     </td>
-                    <td style={{ padding: '1rem 1.25rem', color: 'var(--text-primary)', fontWeight: 600 }}>{product.sales}</td>
+                    <td style={{ padding: '1rem 1.25rem', color: 'var(--text-primary)', fontWeight: 600 }}>{product.sold || 0}</td>
                     <td style={{ padding: '1rem 1.25rem', textAlign: 'right' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
                         {[{ Icon: Eye, bg: 'var(--bg-input)', border: 'var(--border-color)', color: 'var(--text-secondary)', fn: () => {} },
                           { Icon: Edit2, bg: 'rgba(6,182,212,0.1)', border: 'rgba(6,182,212,0.2)', color: '#06b6d4', fn: () => {} },
-                          { Icon: Trash2, bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.2)', color: '#ef4444', fn: () => deleteProduct(product.id) },
+                          { Icon: Trash2, bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.2)', color: '#ef4444', fn: () => deleteProduct(product._id) },
                         ].map(({ Icon, bg, border, color, fn }, i) => (
                           <button key={i} onClick={fn} style={{ width: 32, height: 32, borderRadius: 8, background: bg, border: `1px solid ${border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, cursor: 'pointer' }}><Icon size={14} /></button>
                         ))}

@@ -9,5 +9,6 @@ router.post('/apply', protect, applySeller);
 // Seller protected routes
 router.use(protect, authorize('seller'));
 router.get('/dashboard', getSellerDashboard);
+router.get('/products', require('../controllers/sellerController').getSellerProducts);
 
 module.exports = router;
